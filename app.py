@@ -26,7 +26,7 @@ def load_data():
 
 def audience_simple(country):
     if country == 'US':
-        return 'amreeka'
+        return 'United States of America'
     elif country == 'IN':
         return 'bharat'
     else:
@@ -42,21 +42,23 @@ median_agg = df_agg_diff[df_agg_diff['Video publish time'] >= metric_date_12mo]
 
 numeric_cols = df_agg_diff.select_dtypes(include=[np.float64, np.int64]).columns
 
-# Filter median_agg to keep only the numeric values corresponding to numeric_cols
 numeric_median_agg = median_agg[numeric_cols]
 
-# Apply the arithmetic operation only to the numeric columns
 df_agg_diff[numeric_cols] = (df_agg_diff[numeric_cols] - numeric_median_agg).div(numeric_median_agg)
 
 df_time_diff = pd.merge(df_time, df_agg[['Video', 'Video publish time']], left_on='External Video ID', right_on='Video')
 df_time_diff['days_published'] = (df_time_diff['Date'] - df_time_diff['Video publish time']).dt.days
 
-# Get last 12 months of data rather than all data 
 date_12mo = df_agg['Video publish time'].max() - pd.DateOffset(months=12)
 df_time_diff_yr = df_time_diff[df_time_diff['Video publish time'] >= date_12mo]
 
-add_sidebar = st.sidebar.selectbox('Aggregate or Individual Video', ('Aggregate Metrics', 'Individual Video Analysis'))
+print(df_time_diff)
+print(df_time_diff_yr)
 
+add_sidebar = st.sidebar.selectbox(
+    'Choose an option for insights', 
+    ('Aggregate Metrics', 'Individual Video Analysis', 'Revenue Insights')
+)
 if add_sidebar == 'Aggregate Metrics':
     st.write("Aggregate Metrics Dashboard")
     df_agg_metrics = df_agg[['Video publish time', 'Views', 'Likes', 'Subscribers', 'Shares', 'Comments added',
@@ -65,6 +67,10 @@ if add_sidebar == 'Aggregate Metrics':
     metric_date_12mo = df_agg_metrics['Video publish time'].max() - pd.DateOffset(months=12)
     metric_medians6mo = df_agg_metrics[df_agg_metrics['Video publish time'] >= metric_date_6mo].median()
     metric_medians12mo = df_agg_metrics[df_agg_metrics['Video publish time'] >= metric_date_12mo].median()
+   
+  
+
+   
 
     col1, col2, col3, col4, col5 = st.columns(5)
     columns = [col1, col2, col3, col4, col5]
@@ -85,23 +91,19 @@ if add_sidebar == 'Aggregate Metrics':
     df_agg_diff_final = df_agg_diff[['Video title', 'Publish_date', 'Views', 'Likes', 'Subscribers', 'Shares',
                                     'Comments added', 'RPM(USD)', 'Average % viewed', 'Avg_duration_sec',
                                     'Engagement_ratio', 'Views / sub gained']]
-    st.dataframe(df_agg_diff_final)
+    
 
-    # Select only numeric columns from the DataFrame
     numeric_cols = df_agg_diff_final.select_dtypes(include=[np.number])
 
-    # Apply the median function only to numeric columns
     df_agg_numeric_lst = numeric_cols.median().index.tolist()
 
     def style_negative(v, props=''):
-        """ Style negative values in dataframe"""
         try: 
             return props if v < 0 else None
         except:
             pass
 
     def style_positive(v, props=''):
-        """ Style positive values in dataframe"""
         try: 
             return props if v > 0 else None
         except:
@@ -111,15 +113,25 @@ if add_sidebar == 'Aggregate Metrics':
     for i in df_agg_numeric_lst:
         df_to_pct[i] = '{:.1%}'.format
 
-    st.dataframe(df_agg_diff_final.style.hide().applymap(style_negative, props='color:red;')
-                 .applymap(style_positive, props='color:green;').format(df_to_pct))
-views_days = pd.pivot_table(df_time_diff_yr,index= 'days_published',values ='Views', aggfunc = [np.mean,np.median,lambda x: np.percentile(x, 80),lambda x: np.percentile(x, 20)]).reset_index()
+    #st.dataframe(df_agg_metrics)
 
+    st.dataframe(df_agg_metrics.style.applymap(style_negative, props='color:red;')
+                 .applymap(style_positive, props='color:green;'))
+    
+df_time_diff_yr_filtered = df_time_diff_yr[df_time_diff_yr['days_published'] > 0]
+
+views_days = pd.pivot_table(df_time_diff_yr_filtered, 
+                            index='days_published', 
+                            values='Views', 
+                            aggfunc=[np.mean, np.median, 
+                                     lambda x: np.percentile(x, 80), 
+                                     lambda x: np.percentile(x, 20)]).reset_index()
 
 if add_sidebar == 'Individual Video Analysis':
     videos = tuple(df_agg['Video title'])
     st.write("Individual Video Performance")
-    video_select = st.selectbox('Pick a Video:', videos)
+    video_select = st.selectbox('Pick a Video:', df_agg['Video title'])
+
     agg_filtered = df_agg[df_agg['Video title'] == video_select]
     agg_sub_filtered = df_agg_sub[df_agg_sub['Video Title'] == video_select]
     agg_sub_filtered['Country'] = agg_sub_filtered['Country Code'].apply(audience_simple)
@@ -127,34 +139,120 @@ if add_sidebar == 'Individual Video Analysis':
     fig = px.bar(agg_sub_filtered, x='Views', y='Is Subscribed', color='Country', orientation='h')
     st.plotly_chart(fig)
 
-views_days.columns = ['days_published','mean_views','median_views','80pct_views','20pct_views']
-views_days = views_days[views_days['days_published'].between(0,30)]
-views_cumulative = views_days.loc[:,['days_published','median_views','80pct_views','20pct_views']] 
-views_cumulative.loc[:,['median_views','80pct_views','20pct_views']] = views_cumulative.loc[:,['median_views','80pct_views','20pct_views']].cumsum()
+    views_days.columns = ['days_published','mean_views','median_views','80pct_views','20pct_views']
+    views_days = views_days[views_days['days_published'].between(0,30)]
+    views_cumulative = views_days.loc[:,['days_published','median_views','80pct_views','20pct_views']] 
+    views_cumulative.loc[:,['median_views','80pct_views','20pct_views']] = views_cumulative.loc[:,['median_views','80pct_views','20pct_views']].cumsum()
 
-agg_time_filtered = df_time_diff[df_time_diff['Video Title'] == video_select]
-first_30 = agg_time_filtered[agg_time_filtered['days_published'].between(0,30)]
-first_30 = first_30.sort_values('days_published')
+    if 'video_select' not in locals():
+        video_select = st.selectbox('Pick a Video:', df_agg['Video title'])
 
-fig2 = go.Figure()
-fig2.add_trace(go.Scatter(x=views_cumulative['days_published'], y=views_cumulative['20pct_views'],
-                    mode='lines',
-                    name='20th percentile', line=dict(color='purple', dash ='dash')))
-fig2.add_trace(go.Scatter(x=views_cumulative['days_published'], y=views_cumulative['median_views'],
+    agg_time_filtered = df_time_diff[df_time_diff['Video Title'] == video_select]
+    first_30 = agg_time_filtered[agg_time_filtered['days_published'].between(0,30)]
+    first_30 = first_30.sort_values('days_published')
+
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=views_cumulative['days_published'], y=views_cumulative['20pct_views'],
                         mode='lines',
-                        name='50th percentile', line=dict(color='black', dash ='dash')))
-fig2.add_trace(go.Scatter(x=views_cumulative['days_published'], y=views_cumulative['80pct_views'],
-                        mode='lines', 
-                        name='80th percentile', line=dict(color='royalblue', dash ='dash')))
-fig2.add_trace(go.Scatter(x=first_30['days_published'], y=first_30['Views'].cumsum(),
-                        mode='lines', 
-                        name='Current Video' ,line=dict(color='firebrick',width=8)))
+                        name='20th percentile', line=dict(color='purple', dash ='dash')))
+    fig2.add_trace(go.Scatter(x=views_cumulative['days_published'], y=views_cumulative['median_views'],
+                            mode='lines',
+                            name='50th percentile', line=dict(color='black', dash ='dash')))
+    fig2.add_trace(go.Scatter(x=views_cumulative['days_published'], y=views_cumulative['80pct_views'],
+                            mode='lines', 
+                            name='80th percentile', line=dict(color='royalblue', dash ='dash')))
+    fig2.add_trace(go.Scatter(x=first_30['days_published'], y=first_30['Views'].cumsum(),
+                            mode='lines', 
+                            name='Current Video' ,line=dict(color='firebrick',width=8)))
 
-fig2.update_layout(title='View comparison first 30 days',
-                   xaxis_title='Days Since Published',
-                   yaxis_title='Cumulative views')
+    fig2.update_layout(title='View comparison first 30 days',
+                       xaxis_title='Days Since Published',
+                       yaxis_title='Cumulative views')
 
-st.plotly_chart(fig2)
-  
+    st.plotly_chart(fig2)
+
+
+
+if add_sidebar == 'Revenue Insights':
+    st.write("Revenue Insights Dashboard")
     
+    select1 = st.selectbox('Pick a Video:', df_agg['Video title'], key='revenue_insights_selectbox')
+
+    video_data = df_agg[df_agg['Video title'] == select1].iloc[0]
+    
+    total_revenue = video_data['Your estimated revenue (USD)']
+    rpm = video_data['RPM(USD)']
+    cpm = video_data['CPM(USD)']
+    views = video_data['Views']
+    subscribers_gained = video_data['Subscribers gained']
+    impressions = video_data['Impressions']
+    likes = video_data['Likes']
+    dislikes = video_data['Dislikes']
+
+    likes_dislikes_data = pd.DataFrame({
+    'Type': ['Likes', 'Dislikes'],
+    'Count': [likes, dislikes]})
+    
+    revenue_per_subscriber = total_revenue / subscribers_gained if subscribers_gained != 0 else 0
+    revenue_from_impressions = impressions * rpm / 1000
+    views_to_revenue = total_revenue / views if views != 0 else 0
+    
+    st.write(f"### Video: {select1}")
+    st.write(f"**Total Revenue:** ${total_revenue:,.2f}")
+    st.write(f"**RPM (Revenue per 1000 Views):** ${rpm:,.2f}")
+    st.write(f"**CPM (Cost per 1000 Impressions):** ${cpm:,.2f}")
+    st.write(f"**Revenue per Subscriber Gained:** ${revenue_per_subscriber:,.2f}")
+    st.write(f"**Revenue from Impressions:** ${revenue_from_impressions:,.2f}")
+    st.write(f"**Views to Revenue Conversion Rate:** ${views_to_revenue:,.4f} per view")
+
+    top5_videos = df_agg.sort_values(by=['Your estimated revenue (USD)', 'RPM(USD)', 'CPM(USD)'], ascending=False)
+    top5_videos = top5_videos[['Video title', 'Your estimated revenue (USD)', 'RPM(USD)', 'CPM(USD)']].head(5)
+    st.write("Top 5 performing videos are:")
+    st.dataframe(top5_videos)
+
+    select = st.selectbox('Choose an option', top5_videos['Video title'])
+    selected_video_data = top5_videos[top5_videos['Video title'] == select]
+
+    fig = px.bar(
+    likes_dislikes_data,
+    x='Type',
+    y='Count',
+    title=f'Likes vs Dislikes for {select}',
+    labels={'Count': 'Count', 'Type': 'Like/Dislike'},
+    color='Type',
+    color_discrete_sequence=['blue', 'red']  # Customize colors
+)
+
+# Display the chart
+    st.plotly_chart(fig)
+
+
+    fig = px.bar(selected_video_data, 
+                 x='Video title', 
+                 y='Your estimated revenue (USD)', 
+                 title='Top 5 Videos by Revenue, RPM, and CPM', 
+                 labels={'Your estimated revenue (USD)': 'Revenue (USD)'})
+
+    st.plotly_chart(fig)
+
+
+    fig_pie = px.pie(top5_videos, 
+                 values='Your estimated revenue (USD)', 
+                 names='Video title', 
+                 title='Revenue Breakdown by Video')
+    
+    st.plotly_chart(fig_pie)
+
+
+
+
+
+
+
+
+
+
+
+    
+
 
